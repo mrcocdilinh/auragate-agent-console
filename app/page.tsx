@@ -16,6 +16,7 @@ const initialAgents: AgentState[] = AGENT_SEEDS.map((agent) => ({
   ...agent,
   privateKey: "",
   groqKey: "",
+  query: "",
   address: "",
   walletBalance: "—",
   gatewayBalance: "—",
@@ -48,6 +49,7 @@ export default function ConsolePage() {
   const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [showGroqKey, setShowGroqKey] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
+  const [runAllConfirmOpen, setRunAllConfirmOpen] = useState(false);
   const [vaultStatus, setVaultStatus] = useState<"idle" | "loading" | "saved" | "error">("idle");
 
   const active = agents.find((agent) => agent.id === activeId) ?? agents[0];
@@ -108,6 +110,7 @@ export default function ConsolePage() {
       color: palette[(id - 1) % palette.length],
       privateKey: "",
       groqKey: "",
+      query: "",
       address: "",
       walletBalance: "—",
       gatewayBalance: "—",
@@ -180,42 +183,41 @@ export default function ConsolePage() {
     setVaultStatus("idle");
   }
 
-  function handleEvent(event: StreamEvent) {
-    event.agentId = active.id;
-    setEvents((current) => [event, ...current].slice(0, 120));
+  function handleEventForAgent(event: StreamEvent, agentId: number) {
+    event.agentId = agentId;
+    setEvents((current) => [event, ...current].slice(0, 200));
     if (["payment", "deposit", "insight", "complete", "error"].includes(event.type)) {
-      setResults((current) => ({ ...current, [active.id]: [...(current[active.id] ?? []), event] }));
+      setResults((current) => ({ ...current, [agentId]: [...(current[agentId] ?? []), event] }));
     }
     if (event.type === "payment") {
-      setAgents((current) => current.map((agent) => agent.id === active.id
-        ? { ...agent, spent: agent.spent + Number(event.amount ?? 0), calls: agent.calls + 1 }
-        : agent));
+      setAgents((current) => current.map((a) => a.id === agentId
+        ? { ...a, spent: a.spent + Number(event.amount ?? 0), calls: a.calls + 1 }
+        : a));
     }
     if (event.type === "balances" || event.type === "complete") {
       const balances = event.balances as { wallet?: { formatted?: string }; gateway?: { formattedAvailable?: string } } | undefined;
-      if (balances) updateActive({
-        walletBalance: balances.wallet?.formatted ?? active.walletBalance,
-        gatewayBalance: balances.gateway?.formattedAvailable ?? active.gatewayBalance,
-      });
+      if (balances) setAgents((current) => current.map((a) => a.id === agentId
+        ? { ...a, walletBalance: balances.wallet?.formatted ?? a.walletBalance, gatewayBalance: balances.gateway?.formattedAvailable ?? a.gatewayBalance }
+        : a));
     }
-    if (event.type === "complete") updateActive({ status: "done" });
-    if (event.type === "error") updateActive({ status: "error" });
+    if (event.type === "complete") setAgents((current) => current.map((a) => a.id === agentId ? { ...a, status: "done" } : a));
+    if (event.type === "error") setAgents((current) => current.map((a) => a.id === agentId ? { ...a, status: "error" } : a));
   }
 
-  async function runAgent() {
-    setConfirmOpen(false);
-    updateActive({ status: "running", spent: 0, calls: 0 });
-    setResults((current) => ({ ...current, [active.id]: [] }));
+  async function runAgentById(agent: AgentState) {
+    setAgents((current) => current.map((a) => a.id === agent.id ? { ...a, status: "running", spent: 0, calls: 0 } : a));
+    setResults((current) => ({ ...current, [agent.id]: [] }));
     try {
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          agentId: active.id,
-          agentName: active.name,
-          privateKey: active.privateKey,
-          groqKey: active.groqKey,
-          serviceIds: active.selected,
+          agentId: agent.id,
+          agentName: agent.name,
+          privateKey: agent.privateKey,
+          groqKey: agent.groqKey,
+          query: agent.query,
+          serviceIds: agent.selected,
           autoDeposit: true,
         }),
       });
@@ -228,16 +230,28 @@ export default function ConsolePage() {
         buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        for (const line of lines) if (line.trim()) handleEvent(JSON.parse(line));
+        for (const line of lines) if (line.trim()) handleEventForAgent(JSON.parse(line), agent.id);
         if (done) break;
       }
-      if (buffer.trim()) handleEvent(JSON.parse(buffer));
+      if (buffer.trim()) handleEventForAgent(JSON.parse(buffer), agent.id);
     } catch (error) {
-      handleEvent({ type: "error", at: new Date().toISOString(), message: error instanceof Error ? error.message : String(error) });
+      handleEventForAgent({ type: "error", at: new Date().toISOString(), message: error instanceof Error ? error.message : String(error) }, agent.id);
     }
   }
 
+  async function runAgent() {
+    setConfirmOpen(false);
+    await runAgentById(active);
+  }
+
+  async function runAllAgents() {
+    setRunAllConfirmOpen(false);
+    const runnable = agents.filter((a) => a.privateKey && a.selected.length > 0 && a.status !== "running");
+    await Promise.allSettled(runnable.map((a) => runAgentById(a)));
+  }
+
   const canRun = Boolean(active.privateKey && active.selected.length && catalog?.payment.mode === "live" && active.status !== "running");
+  const canRunAll = Boolean(catalog?.payment.mode === "live" && agents.some((a) => a.privateKey && a.selected.length > 0 && a.status !== "running"));
 
   return (
     <main className="app-shell">
@@ -276,7 +290,8 @@ export default function ConsolePage() {
           <div className="section-title"><span>AGENT FLEET</span><small>{metrics.running ? `${metrics.running} RUNNING` : `${agents.length} AGENTS`}</small></div>
           <div className="fleet-actions">
             <button onClick={addAgent}>＋ Thêm agent</button>
-            <button className={vaultStatus === "saved" ? "saved" : ""} onClick={rememberFleet}>{vaultStatus === "loading" ? "Đang mở vault…" : vaultStatus === "saved" ? "✓ Đã nhớ cục bộ" : "⌁ Ghi nhớ fleet"}</button>
+            <button className={vaultStatus === "saved" ? "saved" : ""} onClick={rememberFleet}>{vaultStatus === "loading" ? "Đang mở vault…" : vaultStatus === "saved" ? "✓ Đã nhớ" : "⌁ Ghi nhớ"}</button>
+            <button className="fleet-run-all" disabled={!canRunAll} onClick={() => setRunAllConfirmOpen(true)}>⚡ Chạy tất cả</button>
           </div>
           <div className="agent-list">
             {agents.map((agent, index) => (
@@ -335,8 +350,19 @@ export default function ConsolePage() {
             </div>
           </div>
 
+          <div className="query-block">
+            <div className="field-label"><span>03 · CÂU HỎI CHO AGENT</span><small>Groq trả lời đúng trọng tâm · tùy chọn</small></div>
+            <textarea
+              className="query-input"
+              value={active.query}
+              onChange={(e) => { updateActive({ query: e.target.value }); setVaultStatus("idle"); }}
+              placeholder="VD: Giá Bitcoin hiện tại là bao nhiêu? / Tỷ giá USD/VND hôm nay? / Nhiệt độ Hà Nội ngày mai?"
+              rows={2}
+            />
+          </div>
+
           <div className="mission-block">
-            <div className="field-label"><span>03 · MISSION QUEUE</span><small>{active.selected.length}/6 APIs</small></div>
+            <div className="field-label"><span>04 · MISSION QUEUE</span><small>{active.selected.length}/6 APIs</small></div>
             <div className="mission-line">
               <div className="service-stack">
                 {selectedServices.map((service, index) => (
@@ -455,6 +481,23 @@ export default function ConsolePage() {
               })}
             </div>
             <footer><span>{active.selected.length} API · tối đa {projected.toFixed(3)} USDC</span><button onClick={() => setPickerOpen(false)}>Xong →</button></footer>
+          </section>
+        </div>
+      )}
+
+      {runAllConfirmOpen && (
+        <div className="modal-backdrop">
+          <section className="modal confirm-modal">
+            <span className="warning-mark">!</span>
+            <p className="eyebrow">BATCH SETTLEMENT</p>
+            <h3>Chạy đồng loạt {agents.filter((a) => a.privateKey && a.selected.length > 0 && a.status !== "running").length} agent</h3>
+            <p>Tất cả agent đã có ví sẽ ký giao dịch x402 thật <b>cùng lúc</b> trên Arc Testnet. Agent nào thiếu tiền sẽ auto-deposit.</p>
+            <div className="confirm-total">
+              <span>TỔNG CHI TỐI ĐA</span>
+              <strong>{agents.filter((a) => a.privateKey && a.selected.length > 0).reduce((sum, a) => sum + amountOf(a.selected, services), 0).toFixed(3)} <small>USDC</small></strong>
+              <small>Cộng gộp toàn bộ agent</small>
+            </div>
+            <div className="confirm-actions"><button onClick={() => setRunAllConfirmOpen(false)}>Huỷ</button><button className="danger" onClick={runAllAgents}>Xác nhận chạy tất cả →</button></div>
           </section>
         </div>
       )}

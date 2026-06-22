@@ -21,6 +21,7 @@ type RunInput = {
   agentName: string;
   privateKey: string;
   groqKey?: string;
+  query?: string;
   serviceIds: string[];
   autoDeposit?: boolean;
 };
@@ -187,22 +188,23 @@ export async function POST(request: NextRequest) {
 
         let insight: string | null = null;
         if (input.groqKey?.trim()) {
-          emit({ type: "thinking", message: "Groq đang đọc kết quả và viết bản tóm tắt cho agent…" });
+          const hasQuery = Boolean(input.query?.trim());
+          emit({ type: "thinking", message: hasQuery ? `Groq đang trả lời: "${input.query!.trim()}"…` : "Groq đang đọc kết quả và viết bản tóm tắt cho agent…" });
           const groq = new Groq({ apiKey: input.groqKey.trim() });
+          const systemPrompt = hasQuery
+            ? `Bạn là ${input.agentName || `Agent ${input.agentId}`}. Người dùng hỏi: "${input.query!.trim()}". Dựa chính xác vào dữ liệu API được cung cấp, hãy trả lời câu hỏi đó trực tiếp và ngắn gọn. Nếu dữ liệu không đủ để trả lời, hãy nói rõ. Không bịa số liệu.`
+            : `Bạn là ${input.agentName || `Agent ${input.agentId}`}. Trả lời bằng tiếng Việt, súc tích, dựa đúng dữ liệu API, nêu 3 insight hữu ích và 1 hành động tiếp theo. Không bịa số liệu.`;
           const completion = await groq.chat.completions.create({
             model: "llama-3.3-70b-versatile",
-            temperature: 0.25,
-            max_tokens: 420,
+            temperature: 0.2,
+            max_tokens: hasQuery ? 280 : 420,
             messages: [
-              {
-                role: "system",
-                content: `Bạn là ${input.agentName || `Agent ${input.agentId}`}. Trả lời bằng tiếng Việt, súc tích, dựa đúng dữ liệu API, nêu 3 insight hữu ích và 1 hành động tiếp theo. Không bịa số liệu.`,
-              },
+              { role: "system", content: systemPrompt },
               { role: "user", content: JSON.stringify(results).slice(0, 12000) },
             ],
           });
           insight = completion.choices[0]?.message?.content ?? null;
-          emit({ type: "insight", insight, model: "llama-3.3-70b-versatile", message: "Groq đã hoàn tất bản phân tích." });
+          emit({ type: "insight", insight, model: "llama-3.3-70b-versatile", message: "Groq đã hoàn tất." });
         }
 
         const finalBalances = await gateway.getBalances();

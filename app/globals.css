@@ -317,6 +317,14 @@ body > main > footer a { justify-self: end; color: #809187; }
 .fleet-actions button { min-height: 38px; border: 1px solid #31483c; background: #0b1713; color: #9db0a5; cursor: pointer; font-size: 12px; text-align: center; padding: 0 10px; }
 .fleet-actions button:first-child { border-color: rgba(183,245,98,.35); color: var(--acid); }
 .fleet-actions button.saved { border-color: rgba(80,217,170,.36); color: #66e3b8; }
+.fleet-run-all { grid-column: 1 / -1; border: 1px solid rgba(255,180,50,.45) !important; background: rgba(255,180,50,.07) !important; color: #f5c84a !important; font-size: 13px !important; font-weight: 600; letter-spacing: .05em; }
+.fleet-run-all:hover:not(:disabled) { background: rgba(255,180,50,.15) !important; box-shadow: 0 0 18px rgba(255,180,50,.1); }
+.fleet-run-all:disabled { opacity: .35; cursor: not-allowed; }
+/* query block */
+.query-block { padding: 0 0 18px; border-bottom: 1px solid var(--line); }
+.query-input { width: 100%; resize: vertical; background: #08110e; border: 1px solid #2a3f35; color: #c8d8d0; font: 13px/1.6 inherit; padding: 10px 12px; outline: none; min-height: 60px; transition: border-color .2s; }
+.query-input::placeholder { color: #3e5549; }
+.query-input:focus { border-color: color-mix(in srgb, var(--agent) 55%, transparent); box-shadow: inset 2px 0 var(--agent); }
 /* agent list */
 .agent-list { max-height: 460px; overflow: auto; scrollbar-width: thin; scrollbar-color: #2c4638 transparent; }
 .agent-row { min-height: 78px; grid-template-columns: 27px 50px 1fr auto; }

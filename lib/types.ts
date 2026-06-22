@@ -26,6 +26,7 @@ export type AgentState = {
   color: string;
   privateKey: string;
   groqKey: string;
+  query: string;
   address: string;
   walletBalance: string;
   gatewayBalance: string;
