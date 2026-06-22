@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { AgentState, Catalog, Service, StreamEvent } from "@/lib/types";
 import { clearAgentVault, hasSavedVault, loadAgentVault, saveAgentVault } from "@/lib/vault";
 
-const AGENT_SEEDS: Array<Omit<AgentState, "privateKey" | "groqKey" | "address" | "walletBalance" | "gatewayBalance" | "status" | "spent" | "calls">> = [
+const AGENT_SEEDS: Array<Omit<AgentState, "privateKey" | "groqKey" | "query" | "address" | "walletBalance" | "gatewayBalance" | "status" | "spent" | "calls">> = [
   { id: 1, name: "Orion", role: "Crypto markets", glyph: "O", color: "#ff9255", selected: ["oracle-check", "sentiment"] },
   { id: 2, name: "Vega", role: "Stocks · FX", glyph: "V", color: "#50d9aa", selected: ["stocks", "fx-rates"] },
   { id: 3, name: "Atlas", role: "Weather · world", glyph: "A", color: "#66a6ff", selected: ["weather", "country-info"] },
